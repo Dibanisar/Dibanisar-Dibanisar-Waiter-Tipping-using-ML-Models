@@ -1,0 +1,293 @@
+---
+title: "Supervised Assignment 1"
+author: "Dibanisa Fakude"
+date: "2024-04-13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+#rm(list=ls())
+
+#setwd("directory where data file is saved")
+fulldata <- read.csv("~/practice/tipdata.csv") #Read in all 244 observations
+
+set.seed(37) #Insert your own project number here
+#Example: If your project number is 10, run the line set.seed(10)
+
+my_data <- fulldata[sample(1:nrow(fulldata), 200, replace=FALSE), ]
+head(my_data)
+#write.csv(my_data, 'my_tipdata.csv', row.names = FALSE)
+```
+
+```{r}
+library(tidyverse)
+#Checking the stucture of my data
+str(my_data)
+#encoding the data to facttoctor
+my_data<-my_data %>% 
+  mutate(sex = factor(sex),
+         smoker = factor(smoker),
+         day= factor(day),
+         time= factor(time),
+         size = factor(size))
+
+#Checking the summary
+summary(my_data)
+predictors <- c("total_bill", "sex", "smoker", "day", "time", "size")
+
+func <- function(predictor){
+  plot(my_data[[predictor]], my_data$tip, xlab = predictor, ylab = "Tip Amount", main = paste("Tip vs", predictor))
+}
+
+# Applying the function to each predictor variable
+plots <- lapply(predictors, func)
+
+# Viewing the plots
+print(plots)
+
+
+```
+
+
+```{r}
+library(caTools)
+#Exluding the first column
+datasets<- my_data[-1]
+
+#Splitting the datastes
+split<-sample.split(datasets$tip,SplitRatio = 0.8)
+
+#Subsetting the data acording to the split ratio
+x_train<- subset(datasets,split == TRUE)
+x_test<- subset(datasets,split == FALSE)
+
+#Creating the regressor for the datasets
+regressor<- lm(formula =tip ~ ., data = x_train )
+#Checking the models performance
+summary(regressor)
+
+#In this output, 'total_bill' and 'size' appear to be statistically significant predictors of tip amounts, as indicated by their low p-values. The other predictor variables ('sex', 'smoker', 'day', 'time') do not appear to be statistically significant based on their p-values.
+```
+
+
+```{r}
+#Predicting tip amount using the created model
+y_pred<- predict(regressor,newdata = x_test)
+y_pred
+```
+
+```{r}
+#Computing the MSE of the model
+# Calculate Mean Squared Error (MSE) of the lm model
+mse <- mean((x_test$tip - y_pred)^2)
+mse
+
+  
+```
+
+
+```{r}
+# Perform Backwards Stepwise Regression based on AIC
+backward_aic <- step(regressor, direction = "backward", k = 2, trace = 0)
+# Print summary of models
+summary(backward_aic)
+
+```
+
+
+```{r}
+# Perform Backwards Stepwise Regression based on BIC
+backward_bic <- step(regressor, direction = "backward", k = log(nrow(x_train)), trace = 0)
+
+
+summary(backward_bic)
+```
+
+
+```{r}
+
+# Predicted values
+predicted <- predict(backward_aic, newdata = x_train)
+
+# Calculate squared errors
+squared_errors <- (x_train$tip - predicted)^2
+
+# Calculate MSE
+mse_AIC <- mean(squared_errors)
+
+# Print the MSE
+print(paste("MSE for model selected by AIC:", mse_AIC))
+
+
+```
+
+
+```{r}
+# Predicted values
+predicted_bic <- predict(backward_bic, newdata = x_train)
+
+# Calculate squared errors
+squared_errors_bic <- (x_train$tip - predicted_bic)^2
+
+# Calculate MSE
+mse_bic <- mean(squared_errors_bic)
+
+# Print the MSE
+print(paste("MSE for model selected by BIC:", mse_bic))
+
+
+```
+
+
+Finding the optima lambda for the Rigde and lasso with Cross Validation
+```{r}
+# Load the glmnet package (if not already installed)
+# install.packages("glmnet")
+library(glmnet)
+
+# Convert the data to matrix format
+x_train_matrix <- as.matrix(x_train[, -2])  # Exclude the target variable
+y_train_vector <- x_train$tip
+
+# Perform cross-validation for RIDGE
+cv_ridge <- cv.glmnet(x_train_matrix, y_train_vector, alpha = 0)
+
+# Optimal lambda value for RIDGE
+opt_lambda_ridge <- cv_ridge$lambda.min
+print(paste("Optimal lambda for RIDGE:", opt_lambda_ridge))
+
+# Perform cross-validation for LASSO
+cv_lasso <- cv.glmnet(x_train_matrix, y_train_vector, alpha = 1)
+
+# Optimal lambda value for LASSO
+opt_lambda_lasso <- cv_lasso$lambda.min
+print(paste("Optimal lambda for LASSO:", opt_lambda_lasso))
+
+```
+```{r}
+#Plotting the cross validation graphs
+plot(cv_lasso)
+plot(cv_ridge)
+```
+
+
+```{r}
+# Perform ridge regression
+ridge_model <- glmnet(x_train_matrix, y_train_vector, alpha = 0, lambda = 0.08)
+
+# Print summary of the ridge model
+print(ridge_model)
+
+```
+iii. LASSO regularization: Penalizes coefficients to prevent overfitting.
+
+
+```{r}
+
+# Perform ridge regression
+lasso_model <- glmnet(x_train_matrix, y_train_vector, alpha = 1, lambda = 0.02)
+
+# Print summary of the lasso model
+print(lasso_model)
+```
+
+(b) Prediction and MSE Calculation:
+For each of variable selection method, RIDGE and LASSO, use your
+trained model to predict tip amounts for the testing set.
+```{r}
+#converting the datasets to a matrix
+x_test_matrix<- as.matrix(x_test[,-2])
+#fitting ot to the ridge regressor
+ridge_pred<- predict(ridge_model,newx = x_test_matrix)
+ridge_pred
+#Fitting on the lasso regression
+lasso_pred<-predict(lasso_model, newx = x_test_matrix)
+lasso_pred
+```
+
+ii. Calculate the test mean squared error (MSE) of each model.
+```{r}
+#Calculation the mean square error for the ridge regression
+# Calculate Mean Squared Error (MSE)
+mse_ridge <- mean((x_test$tip - ridge_pred)^2)
+mse_ridge
+
+#Calculation the mean square error for the lasso regression
+# Calculate Mean Squared Error (MSE)
+mse_lasso <- mean((x_test$tip - lasso_pred)^2)
+mse_lasso
+```
+iii. Comment on the results of each model (Full, Stepwise, RIDGE, and
+LASSO) and select the best model based on MSE.
+
+```{r}
+results <- data.frame(MSE=c(mse, mse_AIC, mse_bic, mse_lasso,mse_ridge))
+
+rownames(results) <- c("Full Model", "Stepwise AIC", "Stepwise BIC", "LASSO", "RIDGE")
+results
+```
+
+
+
+2. Interaction Term:
+(a) Include an interaction term in your final best model from 2 and 3.
+```{r}
+#Calculating the models MSE
+# Fit the selected models to the training data
+model_AIC <- lm(formula = tip ~ total_bill*smoker + size, data = x_train)
+
+
+```
+(b) Prediction and MSE Calculation:
+i. Use your trained model to predict tip amounts for the testing set.
+
+```{r}
+# Obtain predictions from the models on the test data
+best_predictions_aic <- predict(model_AIC, newdata = x_test)
+best_predictions_aic
+```
+
+ii. Calculate the test mean squared error (MSE) of the model.
+```{r}
+# Extract the actual values of the target variable from the test data
+best_actual_values <- x_test$tip
+
+# Calculate squared differences and MSE for the model selected by AIC
+best_mse_aic <- mean((best_actual_values - best_predictions_aic)^2)
+
+
+# Print the MSE for each model
+print(paste("MSE for model selected by AIC(stepwise):", best_mse_aic))
+```
+```{r}
+# Obtain residuals
+residuals <- residuals(best_model_aic)
+
+# Plot residuals against fitted values for linearity and homoscedasticity
+plot(best_model_aic$fitted.values, residuals, 
+     xlab = "Fitted values", ylab = "Residuals",
+     main = "Residuals vs Fitted")
+
+# Add a horizontal line at y = 0 for reference
+abline(h = 0, col = "red")
+
+# Plot histogram of residuals for normality
+hist(residuals, main = "Histogram of Residuals", xlab = "Residuals")
+
+# Plot Q-Q plot of residuals for normality
+qqnorm(residuals)
+qqline(residuals)
+plot(best_model_aic)
+```
+5 Conclusion
+1. Discuss the practical implications of your findings. For example, which factors
+contribute most to higher tips?
+
+Answer:
+
+
+2.How does the interaction term impact tip amounts?
+```{r}
+
+```
+
